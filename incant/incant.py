@@ -3,6 +3,7 @@ import sys
 import time
 import textwrap
 from pathlib import Path
+import re
 import click
 import yaml
 from jinja2 import Environment, FileSystemLoader
@@ -16,6 +17,15 @@ CLICK_STYLE = {
     "warning": {"fg": "yellow"},
     "error": {"fg": "red"},
 }
+
+
+def sanitize_name(name):
+    """Sanitize a name to be suitable for use as a project name.
+
+    Converts to lowercase and replaces non-alphanumeric characters with hyphens.
+    This is useful for converting directory names to valid project names.
+    """
+    return re.sub(r"[^a-z0-9-]", "-", name.lower()).strip("-")
 
 
 class Incant:
@@ -119,10 +129,83 @@ class Incant:
             click.secho("No instances found in config.", **CLICK_STYLE["error"])
             sys.exit(1)
 
+    def setup_project_if_needed(self):
+        """Sets up project isolation if project: true is specified in config."""
+        if not self.config_data:
+            return None
+
+        use_project = self.config_data.get("project", False)
+        if not use_project:
+            return None
+
+        # Get parent directory name and sanitize it for use as project name
+        config_file = self.find_config_file()
+        if config_file is None:
+            click.secho(
+                "Cannot determine parent directory for project name.", **CLICK_STYLE["error"]
+            )
+            return None
+
+        parent_dir_name = config_file.parent.name
+        project_name = sanitize_name(parent_dir_name)
+
+        if not project_name:
+            click.secho(
+                "Cannot create valid project name from parent directory.", **CLICK_STYLE["error"]
+            )
+            return None
+
+        incus = IncusCLI()
+
+        # Check if project already exists
+        if not incus.project_exists(project_name):
+            if self.verbose:
+                click.secho(
+                    f"Creating project '{project_name}' from directory '{parent_dir_name}'...",
+                    **CLICK_STYLE["info"],
+                )
+            incus.create_project(project_name)
+
+            # Copy default profile from default project to new project
+            if self.verbose:
+                click.secho(
+                    f"Copying default profile to project '{project_name}'...", **CLICK_STYLE["info"]
+                )
+            incus.copy_default_profile_to_project(project_name)
+
+            click.secho(
+                f"Created project '{project_name}' with default profile.", **CLICK_STYLE["success"]
+            )
+        else:
+            if self.verbose:
+                click.secho(f"Project '{project_name}' already exists.", **CLICK_STYLE["info"])
+
+        return project_name
+
+    def cleanup_project_if_needed(self, project_name: str):
+        """Cleans up project if it's empty and was created by incant."""
+        if not project_name:
+            return
+
+        incus = IncusCLI()
+
+        # Check if project has any instances left
+        instances = incus.list_instances_in_project(project_name)
+        if not instances:
+            if self.verbose:
+                click.secho(
+                    f"Project '{project_name}' is empty, deleting it...", **CLICK_STYLE["info"]
+                )
+            incus.delete_project(project_name, quiet=not self.verbose)
+            click.secho(f"Deleted empty project '{project_name}'.", **CLICK_STYLE["success"])
+
     def up(self, name=None):
         self.check_config()
 
-        incus = IncusCLI()
+        # Set up project if project: true is specified
+        project_name = self.setup_project_if_needed()
+
+        incus = IncusCLI(project=project_name)
 
         # If a name is provided, check if the instance exists in the config
         if name and name not in self.config_data["instances"]:
@@ -134,6 +217,15 @@ class Incant:
         for instance_name, instance_data in self.config_data["instances"].items():
             # If a name is provided, only process the matching instance
             if name and instance_name != name:
+                continue
+
+            # Check if instance already exists
+            if incus.is_instance(instance_name):
+                if self.verbose:
+                    click.secho(
+                        f"Instance {instance_name} already exists, skipping creation.",
+                        **CLICK_STYLE["info"],
+                    )
                 continue
 
             # Process the instance
@@ -211,7 +303,10 @@ class Incant:
     def provision(self, name: str = None):
         self.check_config()
 
-        incus = IncusCLI()
+        # Set up project if project: true is specified
+        project_name = self.setup_project_if_needed()
+
+        incus = IncusCLI(project=project_name)
 
         if name:
             # If a specific instance name is provided, check if it exists
@@ -243,17 +338,25 @@ class Incant:
     def destroy(self, name=None):
         self.check_config()
 
-        incus = IncusCLI()
+        # Set up project if project: true is specified
+        project_name = self.setup_project_if_needed()
+
+        incus = IncusCLI(project=project_name)
 
         # If a name is provided, check if the instance exists in the config
         if name and name not in self.config_data["instances"]:
             click.secho(f"Instance '{name}' not found in config.", **CLICK_STYLE["error"])
             return
 
+        instances_to_destroy = []
+        instances_that_should_exist = []
+
         for instance_name, _instance_data in self.config_data["instances"].items():
             # If a name is provided, only process the matching instance
             if name and instance_name != name:
                 continue
+
+            instances_that_should_exist.append(instance_name)
 
             # Check if the instance exists before deleting
             if not incus.is_instance(instance_name):
@@ -262,10 +365,34 @@ class Incant:
 
             click.secho(f"Destroying instance {instance_name} ...", **CLICK_STYLE["success"])
             incus.destroy_instance(instance_name)
+            instances_to_destroy.append(instance_name)
+
+        # Handle project cleanup
+        if project_name:
+            if name is None:  # User wants to destroy all instances
+                # Always try to clean up the project when destroying all instances
+                if instances_to_destroy:
+                    click.secho(
+                        f"Destroyed {len(instances_to_destroy)} instance(s).", **CLICK_STYLE["info"]
+                    )
+                else:
+                    click.secho("No instances found to destroy.", **CLICK_STYLE["info"])
+
+                # Clean up the project regardless of whether instances were destroyed
+                self.cleanup_project_if_needed(project_name)
+
+            elif instances_to_destroy:  # Destroyed a specific instance
+                # Check if this was the last instance in the project
+                remaining_instances = incus.list_instances_in_project(project_name)
+                if not remaining_instances:
+                    self.cleanup_project_if_needed(project_name)
 
     def list_instances(self):
         """List all instances defined in the configuration."""
         self.check_config()
+
+        # Set up project if project: true is specified
+        project_name = self.setup_project_if_needed()
 
         for instance_name in self.config_data["instances"]:
             click.echo(f"{instance_name}")
@@ -273,6 +400,11 @@ class Incant:
     def incant_init(self):
         example_config = textwrap.dedent(
             """\
+            # Use project isolation based on parent directory name (default: false)
+            # When set to true, creates an Incus project named after the parent directory
+            # and runs all instances within that project for better organization
+            project: true
+
             instances:
               client:
                 image: images:ubuntu/24.04

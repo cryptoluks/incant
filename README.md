@@ -9,6 +9,7 @@ Incant is a frontend for [Incus](https://linuxcontainers.org/incus/) that provid
 - **Declarative Configuration**: Define your development environments using simple YAML files.
 - **Provisioning Support**: Declare and run provisioning scripts automatically.
 - **Shared Folder Support**: Mount the current working directory into the instance.
+- **Project Isolation**: Automatically create Incus projects based on directory names for better organization and namespace isolation.
 
 ## Installation
 
@@ -102,6 +103,59 @@ $ incant destroy my-instance
 
 ```sh
 $ incant dump
+```
+
+### Use Project Isolation
+
+Incant supports automatic project isolation using Incus native projects. This provides better organization and allows you to have multiple environments with the same instance names without conflicts.
+
+To enable project isolation, add `project: true` to your configuration:
+
+```yaml
+# Enable project isolation based on parent directory name
+project: true
+
+instances:
+  webserver:
+    image: images:debian/12
+    provision:
+      - apt-get update && apt-get -y install nginx
+  database:
+    image: images:ubuntu/24.04
+    provision:
+      - apt-get update && apt-get -y install postgresql
+```
+
+#### How Project Isolation Works
+
+When you enable `project: true`:
+
+1. **Automatic Project Creation**: Incant creates an Incus project named after the parent directory (e.g., directory `my-web-app` creates project `my-web-app`)
+2. **Default Profile Copying**: The default profile from the default project is copied to the new project so your instances have proper device configuration
+3. **Scoped Operations**: All incant operations (`up`, `provision`, `destroy`, `list`) work within the project scope
+4. **No Global Switching**: Your global Incus context remains unchanged - the project is used via `--project` flags
+5. **Automatic Cleanup**: When you destroy all instances, the project is automatically deleted
+
+#### Benefits of Project Isolation
+
+- **Namespace Isolation**: Multiple directories can have instances with the same names without conflicts
+- **Better Organization**: Instances are grouped by project making them easier to manage
+- **Resource Management**: Each project can have its own profiles, networks, and storage
+- **Clean Separation**: Perfect for managing multiple customers, environments, or teams
+
+#### Working with Project-Isolated Instances
+
+```sh
+# Inside a directory with project: true
+$ incant up                    # Creates instances in the project
+$ incant list                  # Lists instances in the project
+$ incant destroy webserver     # Destroys webserver in the project
+$ incant destroy               # Destroys all instances and deletes the project
+
+# To interact with instances outside of incant:
+$ incus list --project my-web-app
+$ incus shell --project my-web-app webserver
+$ incus stop --project my-web-app webserver
 ```
 
 ## Incant compared to Vagrant

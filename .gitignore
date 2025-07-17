@@ -181,3 +181,6 @@ debian/incant.substvars
 debian/incant/
 
 incant.yaml
+
+.direnv/
+bin/

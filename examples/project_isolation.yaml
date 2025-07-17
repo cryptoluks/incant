@@ -1,0 +1,90 @@
+# Example configuration demonstrating project isolation
+# This configuration uses project: true to automatically create an Incus project
+# named after the parent directory and isolate all instances within it.
+#
+# Benefits of using project isolation:
+# - Better organization: instances are grouped by project
+# - Namespace isolation: same instance names can be used across different projects  
+# - Resource management: projects can have their own profiles, networks, and storage
+# - Clean separation: easier to manage multiple environments or customers
+# - Automatic cleanup: project is deleted when all instances are destroyed
+#
+# How it works:
+# 1. When you run 'incant up' in this directory, Incus will:
+#    - Create a project named after this directory (sanitized for Incus naming)
+#    - Copy the default profile from the default project to the new project
+#    - Create all instances within that project scope (using --project flag)
+#    - NOT switch your global Incus context (you stay on default project globally)
+#
+# 2. When you run 'incant destroy' and remove all instances:
+#    - The project will be automatically deleted if it becomes empty
+#
+# 3. Operations are scoped to the project:
+#    - 'incant up webserver' creates webserver in the project
+#    - 'incant provision database' provisions database in the project
+#    - 'incant list' shows instances in the project
+#
+# If this config file is in a directory called "my-web-app", the project will be 
+# named "my-web-app" and all instances will live in that project.
+
+# Enable project isolation based on parent directory name
+project: true
+
+instances:
+  # These instances will be created in the project, not the default project
+  # Instance names remain simple since they're isolated within the project
+  webserver:
+    image: images:debian/12
+    vm: false
+    provision:
+      - apt-get update && apt-get -y install nginx
+      - systemctl enable nginx
+      - echo "Web server for project running" > /var/www/html/index.html
+
+  # database:
+  #   image: images:ubuntu/24.04
+  #   provision:
+  #     - apt-get update && apt-get -y install postgresql postgresql-contrib
+  #     - systemctl enable postgresql
+
+  # cache:
+  #   image: images:alpine/latest
+  #   provision:
+  #     - apk add --no-cache redis
+  #     - rc-update add redis default
+
+  # # You can still use all normal instance configuration options
+  # development:
+  #   image: images:debian/12
+  #   vm: true
+  #   devices:
+  #     root:
+  #       size: 30GB
+  #   config:
+  #     limits.memory: 4GB
+  #     limits.cpu: 2
+  #   provision: |
+  #     #!/bin/bash
+  #     set -xe
+  #     apt-get update
+  #     apt-get -y install git nodejs npm python3 python3-pip
+  #     echo "Development environment ready"
+
+# Note: With project isolation, you can have multiple directories with 
+# identical instance names without conflicts:
+# 
+# my-web-app/
+#   incant.yaml  <- webserver, database instances in "my-web-app" project
+# 
+# my-mobile-app/  
+#   incant.yaml  <- webserver, database instances in "my-mobile-app" project
+#
+# Both can have "webserver" and "database" instances without naming conflicts!
+#
+# To interact with instances outside of incant:
+# - incus list --project my-web-app
+# - incus shell --project my-web-app webserver
+# - incus stop --project my-web-app webserver
+#
+# Your global Incus context remains unchanged - you can still use 'incus list'
+# to see instances in the default project. 
