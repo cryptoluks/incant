@@ -1,5 +1,5 @@
 import click
-from incant import Incant
+from .incant import Incant
 
 
 @click.group(invoke_without_command=True)
