@@ -297,10 +297,17 @@ class IncusCLI:
         raise InstanceError("Shared folder creation failed after all retries")
 
     # Project operations
-    def create_project(self, name: str) -> None:
-        """Create a new project."""
+    def create_project(self, name: str, config: Optional[Dict[str, str]] = None) -> None:
+        """Create a new project with optional configuration."""
         try:
-            self._run_command(["project", "create", name], project="none")
+            command = ["project", "create", name]
+            
+            # Add configuration options if provided
+            if config:
+                for key, value in config.items():
+                    command.extend(["--config", f"{key}={value}"])
+            
+            self._run_command(command, project="none")
         except IncusCommandError as e:
             raise ProjectError(f"Failed to create project {name}: {e}")
 

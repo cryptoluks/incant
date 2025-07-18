@@ -1,0 +1,18 @@
+project: true
+
+instances:
+  webserver:
+    image: images:debian/13
+    vm: true
+    devices:
+      root:
+        size: 20GB
+    config:
+      limits.processes: 100
+    type: c2-m2
+    provision:
+      - apt-get update && apt-get -y install curl
+      - |
+        #!/bin/bash
+        set -xe
+        echo Done!

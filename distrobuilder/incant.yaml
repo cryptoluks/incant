@@ -1,0 +1,44 @@
+instances:
+  distrobuilder:
+    image: images:ubuntu/noble
+    vm: true
+    devices:
+      root:
+        size: 50GB
+    type: c4-m16
+    provision:
+      - |
+        #!/usr/bin/env bash
+        set -euxo pipefail
+
+        apt-get update && apt-get -y --no-install-recommends install \
+          btrfs-progs \
+          debootstrap \
+          dosfstools \
+          gnupg \
+          qemu-kvm \
+          qemu-utils \
+          rsync \
+          squashfs-tools \
+          xz-utils \
+          snapd
+
+        snap install distrobuilder --classic
+
+        mkdir -p /usr/share/debootstrap/scripts
+
+        cd /incant && /snap/bin/distrobuilder build-incus kali.yaml \
+          --vm \
+          --type=unified \
+          --compression=none \
+          -o image.architecture=amd64 \
+          -o image.variant=cloud \
+          -o image.release=kali-rolling
+
+        cd /incant && /snap/bin/distrobuilder build-incus kali.yaml \
+          --vm \
+          --type=unified \
+          --compression=none \
+          -o image.architecture=amd64 \
+          -o image.variant=xfce \
+          -o image.release=kali-rolling

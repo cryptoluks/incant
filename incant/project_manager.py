@@ -62,7 +62,11 @@ class ProjectManager:
                 )
 
             try:
-                self.incus.create_project(project_name)
+                # Create project with shared images by default
+                project_config = {
+                    "features.images": "false"  # Allow access to default project's images
+                }
+                self.incus.create_project(project_name, config=project_config)
 
                 # Copy default profile from default project to new project
                 if self.verbose:
@@ -73,7 +77,7 @@ class ProjectManager:
                 self.incus.copy_default_profile_to_project(project_name)
 
                 click.secho(
-                    f"Created project '{project_name}' with default profile.",
+                    f"Created project '{project_name}' with shared images.",
                     **CLICK_STYLE["success"],
                 )
             except Exception as e:

@@ -1,0 +1,15 @@
+project: true
+
+instances:
+  kali:
+    image: kali/xfce
+    vm: true
+    devices:
+      root:
+        size: 20GB
+    type: c4-m4
+    provision:
+      - |
+        #!/bin/bash
+        set -xe
+        echo Done!
